@@ -85,6 +85,11 @@ python src/query.py --query   # run analytics queries
 - Average session duration by contract type
 - High-risk customers (month-to-month, short tenure)
 
+## Monitoring
+
+- CloudWatch alarm that fires if Firehose DeliveryToS3.Success drops below expected threshold
+- CloudWatch alarm on DeliveryToS3.DataFreshness (how far behind delivery is getting)
+
 ## Cost
 
 All services are pay-per-use with no minimum hourly charge:
@@ -101,4 +106,5 @@ For a development/portfolio workload, expect costs in the low cents range.
 - [x] Athena table with partition discovery and example analytics queries
 - [ ] Add Lambda consumer for real-time processing alongside the batch layer
 - [ ] Connect to churn-mlops: trigger retraining when drift is detected in streaming data
+- [x] CloudWatch alarms for Firehose delivery health (delivery success rate + data freshness lag)
 - [ ] CloudWatch dashboard for pipeline monitoring (events/sec, delivery latency)
