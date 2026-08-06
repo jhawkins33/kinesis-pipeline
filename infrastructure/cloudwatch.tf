@@ -29,3 +29,19 @@ resource "aws_cloudwatch_metric_alarm" "firehose_data_freshness" {
     DeliveryStreamName = aws_kinesis_firehose_delivery_stream.events.name
   }
 }
+
+resource "aws_cloudwatch_metric_alarm" "firehose_failed_conversion" {
+  alarm_name          = "${var.project}-firehose-failed-conversion"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "FailedConversion.Records"
+  namespace           = "AWS/Firehose"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "One or more records failed conversion/processing in Firehose. Check the S3 error prefix (errors/) for dropped records and investigate the error type."
+
+  dimensions = {
+    DeliveryStreamName = aws_kinesis_firehose_delivery_stream.events.name
+  }
+}
