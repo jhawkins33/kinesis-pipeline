@@ -20,6 +20,7 @@ Athena (SQL queries)
 | `infrastructure/` | Terraform config — Firehose stream, S3 buckets, IAM role, Athena workgroup + database |
 | `src/producer.py` | Simulates customer behavioral events and sends them to Firehose |
 | `src/query.py` | Creates the Athena table and runs example analytics queries |
+| `src/check_errors.py` | Checks the S3 error prefix for Firehose delivery failures and prints a summary by error type |
 
 ## Infrastructure
 
@@ -89,6 +90,7 @@ python src/query.py --query   # run analytics queries
 
 - CloudWatch alarm that fires if Firehose DeliveryToS3.Success drops below expected threshold
 - CloudWatch alarm on DeliveryToS3.DataFreshness (how far behind delivery is getting)
+- **`kinesis-pipeline-firehose-failed-conversion`** — fires immediately if any records fail conversion or processing. Run `python src/check_errors.py` to inspect what landed in the S3 error prefix.
 
 ## Cost
 
