@@ -18,8 +18,15 @@ import time
 from datetime import datetime, timezone
 import boto3
 from dotenv import load_dotenv
+import botocore.exceptions
 
 load_dotenv()
+
+TRANSIENT_ERRORS = {
+    "ProvisionedThroughputExceededException",
+    "ServiceUnavailableException",
+}
+MAX_RETRIES = 3
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 PROFILE = os.environ.get("AWS_PROFILE", "churn-mlops-personal")
@@ -93,15 +100,26 @@ def send_events(n_events: int, delay: float = 0.05):
         event = generate_event(customer_pool)
         record = json.dumps(event) + "\n"  # newline delimiter for Athena
 
-        try:
-            firehose.put_record(
-                DeliveryStreamName=STREAM_NAME,
-                Record={"Data": record.encode("utf-8")},
-            )
-            sent += 1
-        except Exception as e:
-            errors += 1
-            print(f"  Error on event {i+1}: {e}")
+# Retry up to MAX_RETRIES times on transient errors.
+        # Exponential backoff: 1s, 2s, 4s before giving up.
+        for attempt in range(MAX_RETRIES):
+            try:
+                firehose.put_record(
+                    DeliveryStreamName=STREAM_NAME,
+                    Record={"Data": record.encode("utf-8")},
+                )
+                sent += 1
+                break  # success — exit retry loop
+            except botocore.exceptions.ClientError as e:
+                code = e.response["Error"]["Code"]
+                if code in TRANSIENT_ERRORS and attempt < MAX_RETRIES - 1:
+                    wait = 2 ** attempt  # 1s, 2s, 4s
+                    print(f"  Transient error ({code}), retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    errors += 1
+                    print(f"  Error on event {i+1} (attempt {attempt+1}): {e}")
+                    break
 
         if (i + 1) % 25 == 0 or (i + 1) == n_events:
             print(f"  {i + 1}/{n_events} sent")
