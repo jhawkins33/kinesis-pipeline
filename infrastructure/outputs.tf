@@ -17,3 +17,11 @@ output "athena_database" {
 output "athena_workgroup" {
   value = aws_athena_workgroup.main.name
 }
+
+output "kinesis_stream_name" {
+  value = aws_kinesis_stream.events.name
+}
+
+output "lambda_function_name" {
+  value = aws_lambda_function.consumer.function_name
+}

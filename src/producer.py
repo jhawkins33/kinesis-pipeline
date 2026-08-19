@@ -31,7 +31,8 @@ MAX_RETRIES = 3
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 PROFILE = os.environ.get("AWS_PROFILE", "churn-mlops-personal")
 STREAM_NAME = os.environ.get("FIREHOSE_STREAM_NAME", "kinesis-pipeline-events")
-
+KINESIS_STREAM_NAME = os.environ.get("KINESIS_STREAM_NAME", "kinesis-pipeline-stream")
+STREAM_NAME = os.environ.get("FIREHOSE_STREAM_NAME", "kinesis-pipeline-events")
 # Customer segments — mirrors the churn dataset's contract types
 CONTRACT_TYPES = ["Month-to-month", "One year", "Two year"]
 PAYMENT_METHODS = ["Electronic check", "Mailed check", "Bank transfer", "Credit card"]
@@ -89,9 +90,10 @@ def build_customer_pool(size: int = 100) -> list:
 def send_events(n_events: int, delay: float = 0.05):
     session = boto3.Session(profile_name=PROFILE, region_name=REGION)
     firehose = session.client("firehose")
+    kinesis = session.client("kinesis")
 
     customer_pool = build_customer_pool(size=200)
-    print(f"Sending {n_events} events to '{STREAM_NAME}'...")
+    print(f"Sending {n_events} events to Firehose + Kinesis stream...")
 
     sent = 0
     errors = 0
@@ -100,7 +102,8 @@ def send_events(n_events: int, delay: float = 0.05):
         event = generate_event(customer_pool)
         record = json.dumps(event) + "\n"  # newline delimiter for Athena
 
-# Retry up to MAX_RETRIES times on transient errors.
+        # --- Firehose (batch delivery to S3) ---
+        # Retry up to MAX_RETRIES times on transient errors.
         # Exponential backoff: 1s, 2s, 4s before giving up.
         for attempt in range(MAX_RETRIES):
             try:
@@ -109,7 +112,7 @@ def send_events(n_events: int, delay: float = 0.05):
                     Record={"Data": record.encode("utf-8")},
                 )
                 sent += 1
-                break  # success — exit retry loop
+                break  # success - exit retry loop
             except botocore.exceptions.ClientError as e:
                 code = e.response["Error"]["Code"]
                 if code in TRANSIENT_ERRORS and attempt < MAX_RETRIES - 1:
@@ -121,6 +124,16 @@ def send_events(n_events: int, delay: float = 0.05):
                     print(f"  Error on event {i+1} (attempt {attempt+1}): {e}")
                     break
 
+        # --- Kinesis Data Stream (real-time Lambda processing) ---
+        try:
+            kinesis.put_record(
+                StreamName=KINESIS_STREAM_NAME,
+                Data=record.encode("utf-8"),
+                PartitionKey=event["customer_id"],
+            )
+        except Exception as e:
+            print(f"  Kinesis stream write failed for event {i+1}: {e}")
+
         if (i + 1) % 25 == 0 or (i + 1) == n_events:
             print(f"  {i + 1}/{n_events} sent")
 
@@ -128,7 +141,8 @@ def send_events(n_events: int, delay: float = 0.05):
             time.sleep(delay)
 
     print(f"\nDone. {sent} sent, {errors} errors.")
-    print("Note: Firehose buffers for ~60 seconds before delivering to S3.")
+    print("Note: Firehose buffers ~60 seconds before delivering to S3.")
+    print("Note: Kinesis stream events trigger Lambda in real time.")
 
 
 def main():
