@@ -10,9 +10,12 @@ activity) that feed a churn model are streamed here in real time, showing
 how fresh data would flow into the ML pipeline.
 
 ## Architecture
-Producer (Python) → Kinesis Data Firehose → S3 (partitioned by date)
-↓
-Athena (SQL queries)
+Producer (Python) ──→ Kinesis Data Firehose ──→ S3 (partitioned by date)
+                  │                                       ↓
+                  └──→ Kinesis Data Stream ──→ Lambda (real-time churn-risk detection)
+                                                          ↓
+                                                   CloudWatch Logs
+                                              Athena (SQL queries on S3)
 ## What's here
 
 | Path | Purpose |
@@ -20,6 +23,8 @@ Athena (SQL queries)
 | `infrastructure/` | Terraform config — Firehose stream, S3 buckets, IAM role, Athena workgroup + database |
 | `src/producer.py` | Simulates customer behavioral events and sends them to Firehose |
 | `src/query.py` | Creates the Athena table and runs example analytics queries |
+| `src/check_errors.py` | Checks the S3 error prefix for Firehose delivery failures and prints a summary by error type |
+| `src/lambda_consumer.py` | Lambda function that processes Kinesis stream events in real time and flags high-churn-risk customers |
 | `src/check_errors.py` | Checks the S3 error prefix for Firehose delivery failures and prints a summary by error type |
 
 ## Infrastructure
@@ -86,6 +91,18 @@ python src/query.py --query   # run analytics queries
 - Average session duration by contract type
 - High-risk customers (month-to-month, short tenure)
 
+## Real-time processing
+
+`src/lambda_consumer.py` is triggered by the Kinesis Data Stream and processes events in real time — no 60-second Firehose buffer. For each event it:
+
+1. Decodes the base64-encoded Kinesis payload
+2. Checks for high-churn-risk signals: `contract_type == "Month-to-month"` AND `tenure_months < 12`
+3. Logs flagged customers as `HIGH_RISK_EVENT` to CloudWatch with full context (customer ID, event type, tenure, monthly charges)
+
+This mirrors the same feature signals the churn prediction model was trained on — making it possible to flag at-risk customers in real time as they interact with the product, rather than waiting for a nightly batch run.
+
+**Cost note**: Kinesis Data Streams bills per shard-hour (~$0.015/shard/hour). Run `terraform destroy` when not actively using the pipeline, then `terraform apply` to bring it back up.
+
 ## Monitoring
 
 - CloudWatch alarm that fires if Firehose DeliveryToS3.Success drops below expected threshold
@@ -106,7 +123,7 @@ For a development/portfolio workload, expect costs in the low cents range.
 - [x] Kinesis Firehose delivery stream with date-partitioned S3 output
 - [x] Customer event producer (simulates realistic SaaS behavioral data)
 - [x] Athena table with partition discovery and example analytics queries
-- [ ] Add Lambda consumer for real-time processing alongside the batch layer
+- [x] Add Lambda consumer for real-time processing alongside the batch layer
 - [ ] Connect to churn-mlops: trigger retraining when drift is detected in streaming data
 - [x] CloudWatch alarms for Firehose delivery health (delivery success rate + data freshness lag)
 - [ ] CloudWatch dashboard for pipeline monitoring (events/sec, delivery latency)
