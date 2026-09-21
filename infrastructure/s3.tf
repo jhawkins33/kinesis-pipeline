@@ -1,6 +1,7 @@
 # Landing zone for Firehose-delivered events
 resource "aws_s3_bucket" "events" {
   bucket = "${var.project}-events-${var.environment}"
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_public_access_block" "events" {
@@ -23,6 +24,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "events" {
 # Athena query results bucket
 resource "aws_s3_bucket" "athena_results" {
   bucket = "${var.project}-athena-results-${var.environment}"
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_public_access_block" "athena_results" {
